@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kyma-project/kyma-environment-broker/internal/provider"
+
 	"github.com/pivotal-cf/brokerapi/v8/domain"
 
 	"github.com/kyma-project/kyma-environment-broker/internal/networking"
@@ -58,7 +60,7 @@ var defaultOIDSConfig = internal.OIDCConfigDTO{
 	UsernamePrefix: "up-default",
 }
 
-func TestCreateRuntimeResourceStep_OIDC(t *testing.T) {
+func TestCreateRuntimeResourceStep_OIDC_AllCustom(t *testing.T) {
 	// given
 	err := imv1.AddToScheme(scheme.Scheme)
 	assert.NoError(t, err)
@@ -102,6 +104,48 @@ func TestCreateRuntimeResourceStep_OIDC(t *testing.T) {
 	}, runtime.Spec.Shoot.Kubernetes.KubeAPIServer.OidcConfig)
 }
 
+func TestCreateRuntimeResourceStep_OIDC_MixedCustom(t *testing.T) {
+	// given
+	err := imv1.AddToScheme(scheme.Scheme)
+	assert.NoError(t, err)
+	log := logrus.New()
+	memoryStorage := storage.NewMemoryStorage()
+	instance, operation := fixInstanceAndOperation(broker.AzurePlanID, "westeurope", "platform-region")
+	operation.ProvisioningParameters.Parameters.OIDC = &internal.OIDCConfigDTO{
+		ClientID:      "client-id-custom",
+		GroupsClaim:   "gc-custom",
+		IssuerURL:     "issuer-url-custom",
+		UsernameClaim: "uc-custom",
+	}
+	assertInsertions(t, memoryStorage, instance, operation)
+	kimConfig := fixKimConfig("azure", false)
+	inputConfig := input.Config{MultiZoneCluster: true}
+	cli := getClientForTests(t)
+	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
+
+	// when
+	entry := log.WithFields(logrus.Fields{"step": "TEST"})
+	_, repeat, err := step.Run(operation, entry)
+
+	// then
+	assert.NoError(t, err)
+	assert.Zero(t, repeat)
+	runtime := imv1.Runtime{}
+	err = cli.Get(context.Background(), client.ObjectKey{
+		Namespace: "kyma-system",
+		Name:      operation.RuntimeID,
+	}, &runtime)
+	assert.NoError(t, err)
+	assert.Equal(t, gardener.OIDCConfig{
+		ClientID:       ptr.String("client-id-custom"),
+		GroupsClaim:    ptr.String("gc-custom"),
+		IssuerURL:      ptr.String("issuer-url-custom"),
+		SigningAlgs:    []string{"sa-default"},
+		UsernameClaim:  ptr.String("uc-custom"),
+		UsernamePrefix: ptr.String("up-default"),
+	}, runtime.Spec.Shoot.Kubernetes.KubeAPIServer.OidcConfig)
+}
+
 func TestCreateRuntimeResourceStep_Defaults_Azure_MultiZone_YamlOnly(t *testing.T) {
 	// given
 	log := logrus.New()
@@ -140,8 +184,8 @@ func TestCreateRuntimeResourceStep_AllYamls(t *testing.T) {
 		{"AWS Multi Zone", broker.AWSPlanID, true, "eu-west-2"},
 		{"Preview Single Zone", broker.PreviewPlanID, false, "eu-west-2"},
 		{"Preview Multi Zone", broker.PreviewPlanID, true, "eu-west-2"},
-		{"SAP Converged Cloud Single Zone", broker.PreviewPlanID, false, "eu-de-1"},
-		{"SAP Converged Cloud Multi Zone", broker.PreviewPlanID, true, "eu-de-1"},
+		{"SAP Converged Cloud Single Zone", broker.SapConvergedCloudPlanID, false, "eu-de-1"},
+		{"SAP Converged Cloud Multi Zone", broker.SapConvergedCloudPlanID, true, "eu-de-1"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			log := logrus.New()
@@ -180,7 +224,7 @@ func TestCreateRuntimeResourceStep_Defaults_AWS_SingleZone_EnforceSeed_ActualCre
 	assertInsertions(t, memoryStorage, instance, operation)
 
 	kimConfig := fixKimConfig("aws", false)
-	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone"}
+	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone", DefaultGardenerShootPurpose: provider.PurposeProduction}
 
 	cli := getClientForTests(t)
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
@@ -230,7 +274,7 @@ func TestCreateRuntimeResourceStep_Defaults_AWS_SingleZone_DisableEnterpriseFilt
 	assertInsertions(t, memoryStorage, instance, operation)
 
 	kimConfig := fixKimConfig("aws", false)
-	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone"}
+	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone", DefaultGardenerShootPurpose: provider.PurposeProduction}
 
 	cli := getClientForTests(t)
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
@@ -280,7 +324,7 @@ func TestCreateRuntimeResourceStep_Defaults_AWS_SingleZone_DefaultAdmin_ActualCr
 	assertInsertions(t, memoryStorage, instance, operation)
 
 	kimConfig := fixKimConfig("aws", false)
-	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone"}
+	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone", DefaultGardenerShootPurpose: provider.PurposeProduction}
 
 	cli := getClientForTests(t)
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
@@ -329,7 +373,7 @@ func TestCreateRuntimeResourceStep_Defaults_AWS_SingleZone_DryRun_ActualCreation
 
 	kimConfig := fixKimConfig("aws", false)
 	kimConfig.ViewOnly = true
-	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone"}
+	inputConfig := input.Config{MultiZoneCluster: false, ControlPlaneFailureTolerance: "zone", DefaultGardenerShootPurpose: provider.PurposeProduction}
 
 	cli := getClientForTests(t)
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
@@ -385,7 +429,7 @@ func TestCreateRuntimeResourceStep_Defaults_AWS_MultiZoneWithNetworking_ActualCr
 	kimConfig := fixKimConfig("aws", false)
 
 	cli := getClientForTests(t)
-	inputConfig := input.Config{MultiZoneCluster: true}
+	inputConfig := input.Config{MultiZoneCluster: true, DefaultGardenerShootPurpose: provider.PurposeProduction}
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
 
 	// when
@@ -437,7 +481,7 @@ func TestCreateRuntimeResourceStep_Defaults_AWS_MultiZone_ActualCreation(t *test
 	kimConfig := fixKimConfig("aws", false)
 
 	cli := getClientForTests(t)
-	inputConfig := input.Config{MultiZoneCluster: true}
+	inputConfig := input.Config{MultiZoneCluster: true, DefaultGardenerShootPurpose: provider.PurposeProduction}
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
 
 	// when
@@ -482,7 +526,7 @@ func TestCreateRuntimeResourceStep_Defaults_Preview_SingleZone_ActualCreation(t 
 	kimConfig := fixKimConfig("preview", false)
 
 	cli := getClientForTests(t)
-	inputConfig := input.Config{MultiZoneCluster: false}
+	inputConfig := input.Config{MultiZoneCluster: false, DefaultGardenerShootPurpose: provider.PurposeProduction}
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
 
 	// when
@@ -528,7 +572,7 @@ func TestCreateRuntimeResourceStep_Defaults_Preview_SingleZone_ActualCreation_Wi
 	kimConfig := fixKimConfig("preview", false)
 
 	cli := getClientForTests(t)
-	inputConfig := input.Config{MultiZoneCluster: false}
+	inputConfig := input.Config{MultiZoneCluster: false, DefaultGardenerShootPurpose: provider.PurposeProduction}
 	step := NewCreateRuntimeResourceStep(memoryStorage.Operations(), memoryStorage.Instances(), cli, kimConfig, inputConfig, nil, false, defaultOIDSConfig)
 
 	// when
@@ -627,6 +671,7 @@ func TestCreateRuntimeResourceStep_SapConvergedCloud(t *testing.T) {
 			assert.Equal(t, operation.RuntimeID, runtime.Name)
 			assert.Equal(t, "runtime-58f8c703-1756-48ab-9299-a847974d1fee", runtime.Labels["operator.kyma-project.io/kyma-name"])
 			assert.Equal(t, testCase.expectedProvider, runtime.Spec.Shoot.Provider.Type)
+			assert.Nil(t, runtime.Spec.Shoot.Provider.Workers[0].Volume)
 			assertWorkers(t, runtime.Spec.Shoot.Provider.Workers, testCase.expectedMachineType, 20, 3, testCase.expectedZonesCount, 0, testCase.expectedZonesCount, testCase.possibleZones)
 
 		})
@@ -696,16 +741,11 @@ func Test_Defaults(t *testing.T) {
 	nilToDefaultInt := DefaultIfParamNotSet(42, nil)
 	nonDefaultInt := DefaultIfParamNotSet(42, ptr.Integer(7))
 
-	emptyToDefault := DefaultIfParamZero("default value", "")
-	nonEmpty := DefaultIfParamZero("default value", "initial value")
-
 	//then
 	assert.Equal(t, "initial value", nonDefaultString)
 	assert.Equal(t, "default value", nilToDefaultString)
 	assert.Equal(t, 42, nilToDefaultInt)
 	assert.Equal(t, 7, nonDefaultInt)
-	assert.Equal(t, "default value", emptyToDefault)
-	assert.Equal(t, "initial value", nonEmpty)
 }
 
 // assertions

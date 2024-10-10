@@ -2,33 +2,60 @@ package broker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/kyma-project/kyma-environment-broker/internal"
+	broker "github.com/kyma-project/kyma-environment-broker/internal/broker/bindings"
 	"github.com/kyma-project/kyma-environment-broker/internal/storage"
 	"github.com/kyma-project/kyma-environment-broker/internal/storage/dberr"
 	"github.com/pivotal-cf/brokerapi/v8/domain/apiresponses"
 
 	"github.com/pivotal-cf/brokerapi/v8/domain"
 	"github.com/sirupsen/logrus"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type BindingConfig struct {
-	Enabled       bool        `envconfig:"default=false"`
-	BindablePlans EnablePlans `envconfig:"default=aws"`
+	Enabled              bool        `envconfig:"default=false"`
+	BindablePlans        EnablePlans `envconfig:"default=aws"`
+	ExpirationSeconds    int         `envconfig:"default=600"`
+	MaxExpirationSeconds int         `envconfig:"default=7200"`
+	MinExpirationSeconds int         `envconfig:"default=600"`
 }
 
 type BindEndpoint struct {
 	config           BindingConfig
 	instancesStorage storage.Instances
+	bindingsStorage  storage.Bindings
+
+	serviceAccountBindingManager broker.BindingsManager
+	gardenerBindingsManager      broker.BindingsManager
 
 	log logrus.FieldLogger
 }
 
-func NewBind(cfg BindingConfig, instanceStorage storage.Instances, log logrus.FieldLogger) *BindEndpoint {
-	return &BindEndpoint{config: cfg, instancesStorage: instanceStorage, log: log.WithField("service", "BindEndpoint")}
+type BindingParams struct {
+	ServiceAccount    bool `json:"service_account,omit"`
+	ExpirationSeconds int  `json:"expiration_seconds,omit"`
+}
+
+type Credentials struct {
+	Kubeconfig string `json:"kubeconfig"`
+}
+
+func NewBind(cfg BindingConfig, instanceStorage storage.Instances, bindingsStorage storage.Bindings, log logrus.FieldLogger, clientProvider broker.ClientProvider, kubeconfigProvider broker.KubeconfigProvider, gardenerClient client.Client) *BindEndpoint {
+	return &BindEndpoint{config: cfg,
+		instancesStorage:             instanceStorage,
+		bindingsStorage:              bindingsStorage,
+		log:                          log.WithField("service", "BindEndpoint"),
+		serviceAccountBindingManager: broker.NewServiceAccountBindingsManager(clientProvider, kubeconfigProvider),
+		gardenerBindingsManager:      broker.NewGardenerBindingManager(gardenerClient),
+	}
 }
 
 type BindingData struct {
@@ -68,9 +95,69 @@ func (b *BindEndpoint) Bind(ctx context.Context, instanceID, bindingID string, d
 		).WithErrorKey("BindingNotSupported").Build()
 	}
 
+	var parameters BindingParams
+	if len(details.RawParameters) != 0 {
+		err = json.Unmarshal(details.RawParameters, &parameters)
+		if err != nil {
+			message := fmt.Sprintf("failed to unmarshal parameters: %s", err)
+			return domain.Binding{}, apiresponses.NewFailureResponse(fmt.Errorf(message), http.StatusInternalServerError, message)
+		}
+	}
+
+	expirationSeconds := b.config.ExpirationSeconds
+	if parameters.ExpirationSeconds != 0 {
+		if parameters.ExpirationSeconds > b.config.MaxExpirationSeconds {
+			message := fmt.Sprintf("expiration_seconds cannot be greater than %d", b.config.MaxExpirationSeconds)
+			return domain.Binding{}, apiresponses.NewFailureResponse(fmt.Errorf(message), http.StatusBadRequest, message)
+		}
+		if parameters.ExpirationSeconds < b.config.MinExpirationSeconds {
+			message := fmt.Sprintf("expiration_seconds cannot be less than %d", b.config.MinExpirationSeconds)
+			return domain.Binding{}, apiresponses.NewFailureResponse(fmt.Errorf(message), http.StatusBadRequest, message)
+		}
+		expirationSeconds = parameters.ExpirationSeconds
+	}
+
+	var kubeconfig string
+	binding := &internal.Binding{
+		ID:         bindingID,
+		InstanceID: instanceID,
+
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+
+		ExpirationSeconds: int64(expirationSeconds),
+	}
+	if parameters.ServiceAccount {
+		// get kubeconfig for the instance
+		kubeconfig, err = b.serviceAccountBindingManager.Create(ctx, instance, bindingID, expirationSeconds)
+		if err != nil {
+			message := fmt.Sprintf("failed to create a Kyma binding using service account's kubeconfig: %s", err)
+			return domain.Binding{}, apiresponses.NewFailureResponse(fmt.Errorf(message), http.StatusBadRequest, message)
+		}
+		binding.BindingType = internal.BINDING_TYPE_SERVICE_ACCOUNT
+	} else {
+		kubeconfig, err = b.gardenerBindingsManager.Create(ctx, instance, bindingID, expirationSeconds)
+		if err != nil {
+			message := fmt.Sprintf("failed to create a Kyma binding using adminkubeconfig gardener subresource: %s", err)
+			return domain.Binding{}, apiresponses.NewFailureResponse(fmt.Errorf(message), http.StatusBadRequest, message)
+		}
+		binding.BindingType = internal.BINDING_TYPE_ADMIN_KUBECONFIG
+	}
+
+	binding.Kubeconfig = kubeconfig
+
+	err = b.bindingsStorage.Insert(binding)
+	if err != nil {
+		message := fmt.Sprintf("failed to insert Kyma binding into storage: %s", err)
+		return domain.Binding{}, apiresponses.NewFailureResponse(fmt.Errorf(message), http.StatusInternalServerError, message)
+
+	}
+
 	return domain.Binding{
-		IsAsync:     false,
-		Credentials: dummyCredentials,
+		IsAsync: false,
+		Credentials: Credentials{
+			Kubeconfig: kubeconfig,
+		},
 	}, nil
 }
 

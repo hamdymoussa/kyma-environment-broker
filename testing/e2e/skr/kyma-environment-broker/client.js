@@ -6,6 +6,7 @@ const {OAuthCredentials, OAuthToken} = require('../lib/oauth');
 const SCOPES = ['broker:write'];
 const KYMA_SERVICE_ID = '47c9dcbf-ff30-448e-ab36-d3bad66ba281';
 const trialPlanID = '7d55d31d-35ae-4438-bf13-6ffdfa107d9f';
+const DEFAULT_EXPIRATION_SECONDS = 600;
 
 class KEBConfig {
   static fromEnv() {
@@ -270,6 +271,48 @@ class KEBClient {
         reject(err);
       }
     });
+  }
+
+  async createBinding(instanceID, bindingID, serviceAccount, expirationSeconds = DEFAULT_EXPIRATION_SECONDS) {
+    const payload = {
+      service_id: KYMA_SERVICE_ID,
+      plan_id: this.planID,
+      parameters: {
+        service_account: serviceAccount,
+        expiration_seconds: expirationSeconds,
+      },
+    };
+    const endpoint = `service_instances/${instanceID}/service_bindings/${bindingID}?accepts_incomplete=false`;
+    const config = await this.buildRequest(payload, endpoint, 'put');
+
+    try {
+      return await axios.request(config);
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  async deleteBinding(instanceID, bindingID) {
+    const endpoint = `service_instances/${instanceID}/service_bindings/${bindingID}
+    ?accepts_incomplete=false&service_id=${KYMA_SERVICE_ID}&plan_id=${this.planID}`;
+    const config = await this.buildRequest({}, endpoint, 'delete');
+
+    try {
+      return await axios.request(config);
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  async getBinding(instanceID, bindingID) {
+    const endpoint = `service_instances/${instanceID}/service_bindings/${bindingID}?accepts_incomplete=false`;
+    const config = await this.buildRequest({}, endpoint, 'get');
+
+    try {
+      return await axios.request(config);
+    } catch (err) {
+      throw err;
+    }
   }
 
   getPlatformRegion() {

@@ -17,6 +17,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const BINDING_TYPE_SERVICE_ACCOUNT = "service_account"
+const BINDING_TYPE_ADMIN_KUBECONFIG = "gardener_admin_kubeconfig"
+
 type ProvisionerInputCreator interface {
 	SetProvisioningParameters(params ProvisioningParameters) ProvisionerInputCreator
 	SetShootName(string) ProvisionerInputCreator
@@ -164,6 +167,9 @@ type Operation struct {
 	KymaTemplate string `json:"KymaTemplate"`
 
 	LastError kebError.LastError `json:"last_error"`
+
+	// Used during KIM integration while deprovisioning - to be removed later on when provisioner not used anymore
+	KimDeprovisionsOnly bool `json:"kim_deprovisions_only"`
 
 	// following fields are not stored in the storage and should be added to the Merge function
 	InputCreator ProvisionerInputCreator `json:"-"`
@@ -575,4 +581,16 @@ type SubaccountState struct {
 type DeletedStats struct {
 	NumberOfDeletedInstances              int
 	NumberOfOperationsForDeletedInstances int
+}
+
+type Binding struct {
+	ID         string
+	InstanceID string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Kubeconfig        string
+	ExpirationSeconds int64
+	BindingType       string
 }

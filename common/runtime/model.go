@@ -54,6 +54,15 @@ type RuntimeDTO struct {
 	KymaConfig                  *gqlschema.KymaConfigInput     `json:"kymaConfig,omitempty"`
 	ClusterConfig               *gqlschema.GardenerConfigInput `json:"clusterConfig,omitempty"`
 	RuntimeConfig               *map[string]interface{}        `json:"runtimeConfig,omitempty"`
+	Bindings                    []BindingDTO                   `json:"bindings,omitempty"`
+}
+
+type BindingDTO struct {
+	ID                string    `json:"id"`
+	CreatedAt         time.Time `json:"createdAt"`
+	ExpirationSeconds int64     `json:"expiresInSeconds"`
+	ExpiresAt         time.Time `json:"expiresAt"`
+	Type              string    `json:"type"`
 }
 
 type RuntimeStatus struct {
@@ -121,6 +130,8 @@ const (
 	ExpiredParam         = "expired"
 	GardenerConfigParam  = "gardener_config"
 	RuntimeConfigParam   = "runtime_config"
+	BindingsParam        = "bindings"
+	WithBindingsParam    = "with_bindings"
 )
 
 type OperationDetail string
@@ -143,6 +154,10 @@ type ListParameters struct {
 	ClusterConfig bool
 	// RuntimeResourceConfig specifies whether current Runtime Custom Resource details should be included in the response for each runtime
 	RuntimeResourceConfig bool
+	// Bindings specifies whether runtime bindings should be included in the response for each runtime
+	Bindings bool
+	// WithBindings parameter filters runtimes to show only those with bindings
+	WithBindings bool
 	// GardenerConfig specifies whether current Gardener cluster configuration details from provisioner should be included in the response for each runtime
 	GardenerConfig bool
 	// GlobalAccountIDs parameter filters runtimes by specified global account IDs

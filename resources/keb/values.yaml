@@ -13,25 +13,29 @@ global:
       version: "v20240612-83a7c0eb" # do not update along with the other images
     kyma_environment_broker:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
     kyma_environments_subaccount_cleanup_job:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
     kyma_environment_trial_cleanup_job:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
     kyma_environment_expirator_job:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
     kyma_environment_deprovision_retrigger_job:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
     kyma_environment_runtime_reconciler:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
     kyma_environment_subaccount_sync:
       dir:
-      version: "1.8.46"
+      version: "1.10.30"
+    kyma_environment_globalaccounts:
+      dir:
+      version: "1.10.30"
+      
   kyma_environment_broker:
     enabled: false
     serviceAccountName: "kcp-kyma-environment-broker"
@@ -123,6 +127,10 @@ vsoSecrets:
           externalTesterAccessId: external_tester_access_id
           groupId: group_id
           parentId: parent_id
+          trialApiKey: trial_api_key
+          trialInternalTesterAccessId: trial_internal_tester_access_id
+          trialGroupId: trial_group_id
+          trialParentId: trial_parent_id
         data:
           apiEndpoint: {}
           apiKey: {}
@@ -140,25 +148,17 @@ vsoSecrets:
               {{- .Values.avs.externalTesterService -}}
           groupId: {}
           parentId: {}
-          trialApiKey:
-            template: |-
-              {{- .Values.avs.trialApiKey -}}
-          trialInternalTesterAccessId:
-            template: |-
-              {{- .Values.avs.trialInternalTesterAccessId -}}
-          trialGroupId:
-            template: |-
-              {{- .Values.avs.trialGroupId -}}
-          trialParentId:
-            template: |-
-              {{- .Values.avs.trialParentId -}}
+          trialApiKey: {}
+          trialInternalTesterAccessId: {}
+          trialGroupId: {}
+          trialParentId: {}
     edp:
       path: edp
       secretName: "{{ .Values.edp.secretName }}"
-      #restartTargets:
-      #  - kind: Deployment
-      #    name: >-
-      #      {{- template "kyma-env-broker.fullname" . -}}
+      restartTargets:
+        - kind: Deployment
+          name: >-
+            {{- template "kyma-env-broker.fullname" . -}}
       labels: >-
         {{ template "kyma-env-broker.labels" . }}
       templating:
@@ -183,9 +183,9 @@ vsoSecrets:
     cis-v2:
       path: cis
       secretName: "{{ .Values.cis.v2.secretName | required \"please specify .Values.cis.v2.secretName\"}}"
-      #restartTargets:
-      #  - kind: Deployment
-      #    name: "{{- .Values.subaccountSync.name -}}"
+      restartTargets:
+        - kind: Deployment
+          name: "{{- .Values.subaccountSync.name -}}"
       labels: >-
         {{ template "kyma-env-broker.labels" . }}
       templating:
@@ -199,9 +199,9 @@ vsoSecrets:
     cis-accounts:
       path: cis
       secretName: "{{ .Values.cis.accounts.secretName | required \"please specify .Values.cis.accounts.secretName\"}}"
-      #restartTargets:
-      #  - kind: Deployment
-      #    name: "{{- .Values.subaccountSync.name -}}"
+      restartTargets:
+        - kind: Deployment
+          name: "{{- .Values.subaccountSync.name -}}"
       labels: >-
         {{ template "kyma-env-broker.labels" . }}
       templating:
@@ -241,9 +241,16 @@ broker:
     enabled: false
   enableShootAndSeedSameRegion: "false"
   allowUpdateExpiredInstanceWithContext: "false"
-  
+  subaccountMovementEnabled: "false"
+  updateCustomResourcesLabelsOnAccountMove: "false"
+
 binding:
   enabled: false
+  bindablePlans: "aws"
+  expirationSeconds: 600
+  maxExpirationSeconds: 7200
+  # minExpirationSeconds can't be lower than 600 seconds. Forced by Gardener
+  minExpirationSeconds: 600
 
 service:
   type: ClusterIP
@@ -285,6 +292,7 @@ provisioner:
   deprovisioningTimeout: "5h"
   gardenerClusterStepTimeout: "3m"
   runtimeResourceStepTimeout: "8m"
+  clusterUpdateStepTimeout: "2h"
 
   gardener:
     # name of the secret with kubeconfig to the gardener cluster
@@ -337,7 +345,6 @@ sapConvergedCloudPlanRegionMappings: |-
     - eu-de-3
     - eu-de-4
 disableSapConvergedCloud: false
-subAccountMovementEnabled: "false"
 disableProcessOperationsInProgress: "false"
 enablePlans: "azure,gcp,azure_lite,trial"
 onlySingleTrialPerGA: "true"
@@ -601,3 +608,13 @@ testConfig:
   kebDeployment:
     useAnnotations: false
     weight: "2"
+
+globalaccounts:
+  enabled: false
+  dryRun: true
+  name: "kyma-environment-globalaccounts"
+  probe: -1
+  svc:
+    serviceURL: "TBD"
+    authURL: "TBD"
+    secretName: "cis-creds-accounts"

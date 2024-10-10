@@ -21,6 +21,40 @@ type readSession struct {
 	session *dbr.Session
 }
 
+func (r readSession) GetBinding(instanceID string, bindingID string) (dbmodel.BindingDTO, dberr.Error) {
+	var binding dbmodel.BindingDTO
+
+	err := r.session.
+		Select("*").
+		From(BindingsTableName).
+		Where(dbr.Eq("id", bindingID)).
+		Where(dbr.Eq("instance_id", instanceID)).
+		LoadOne(&binding)
+
+	if err != nil {
+		if err == dbr.ErrNotFound {
+			return dbmodel.BindingDTO{}, dberr.NotFound("Cannot find the Binding for bindingId:'%s'", bindingID)
+		}
+		return dbmodel.BindingDTO{}, dberr.Internal("Failed to get the Binding: %s", err)
+	}
+
+	return binding, nil
+}
+
+func (r readSession) ListBindings(instanceID string) ([]dbmodel.BindingDTO, error) {
+	var bindings []dbmodel.BindingDTO
+	if len(instanceID) == 0 {
+		return bindings, fmt.Errorf("instanceID cannot be empty")
+	}
+	stmt := r.session.Select("*").From(BindingsTableName)
+	if len(instanceID) != 0 {
+		stmt.Where(dbr.Eq("instance_id", instanceID))
+	}
+	stmt.OrderBy("created_at")
+	_, err := stmt.Load(&bindings)
+	return bindings, err
+}
+
 func (r readSession) ListSubaccountStates() ([]dbmodel.SubaccountStateDTO, dberr.Error) {
 	var states []dbmodel.SubaccountStateDTO
 
@@ -848,6 +882,10 @@ func addInstanceFilters(stmt *dbr.SelectStmt, filter dbmodel.InstanceFilter) {
 		if !*filter.DeletionAttempted {
 			stmt.Where("instances.deleted_at = '0001-01-01T00:00:00.000Z'")
 		}
+	}
+
+	if filter.BindingExists != nil && *filter.BindingExists {
+		stmt.Where("exists (select instance_id from bindings where bindings.instance_id=instances.instance_id)")
 	}
 }
 

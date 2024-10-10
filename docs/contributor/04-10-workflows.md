@@ -2,20 +2,17 @@
 
 ## ESLint Workflow
 
-This [workflow](/.github/workflows/run-eslint.yaml) runs the ESLint. It is triggered by pull requests (PRs) on the `main` branch that change at least one of the following:
-- `/.github` directory content
-- `/testing/e2e/skr` directory content
-- `Makefile` file
+This [workflow](/.github/workflows/run-eslint.yaml) runs the ESLint.
 
 The workflow:
-- Checks out code 
-- Invokes `make lint -C testing/e2e/skr`
+1. Checks out code 
+2. Invokes `make lint -C testing/e2e/skr`
 
 ## Markdown Link Check Workflow
 
 This [workflow](/.github/workflows/markdown-link-check.yaml) checks for broken links in all Markdown files. It is triggered:
 - As a periodic check that runs daily at midnight on the main branch in the repository 
-- On every pull request that creates new Markdown files or introduces changes to the existing ones
+- On every pull request
 
 ## Release Workflow
 
@@ -32,43 +29,27 @@ This [workflow](/.github/workflows/label-validator.yml) is triggered by PRs on t
 ## Verify KEB Workflow
 
 This [workflow](/.github/workflows/run-verify.yaml) calls the reusable [workflow](/.github/workflows/run-unit-tests-reusable.yaml) with unit tests.
-Besides the tests, it also runs Go-related checks and Go linter. It is triggered by PRs on the `main` branch that change at least one of the following:
-- `/.github` directory content
-- `/cmd` directory content
-- `/common` directory content
-- `/files` directory content
-- `/internal` directory content
-- `/scripts` directory content
-- `/utils/edp-registrator` directory content
-- `.golangci.yml` file
-- Any `Dockerfile.*` file
-- `go.mod` file
-- `go.sum` file
-- `Makefile` file
-- Any `*.go` file
-- Any `*.sh` file
+Besides the tests, it also runs Go-related checks and Go linter.
 
 ## Govulncheck Workflow
 
-This [workflow](/.github/workflows/run-govulncheck.yaml) runs the Govulncheck. It is triggered by PRs on the `main` branch that change at least one of the following:
-- `/.github` directory content
-- `/cmd` directory content
-- `/common` directory content
-- `/files` directory content
-- `/internal` directory content
-- `/scripts` directory content
-- `/utils/edp-registrator` directory content
-- `.golangci.yml` file
-- Any `Dockerfile.*` file
-- `go.mod` file
-- `go.sum` file
-- `Makefile` file
-- Any `*.go` file
-- Any `*.sh` file
+This [workflow](/.github/workflows/run-govulncheck.yaml) runs the Govulncheck.
 
-## Image Build and Test Workflow
+## Image Build Workflow
 
-This [workflow](/.github/workflows/run-govulncheck.yaml) builds images and calls the reusable [workflow](/.github/workflows/run-keb-chart-install-tests-reusable.yaml) to install the KEB chart with the new images in the k3s cluster. 
+This [workflow](/.github/workflows/pull-build-images.yaml) builds images.
+
+## KEB Chart Install Test
+
+This [workflow](/.github/workflows/run-keb-chart-install-tests.yaml) calls the [reusable workflow](/.github/workflows/run-keb-chart-install-tests-reusable.yaml) to install the KEB chart with the new images in the k3s cluster.
+
+## Auto Merge Workflow
+
+This [workflow](/.github/workflows/auto-merge.yaml) enables the auto-merge functionality on a PR that is not a draft.
+
+## All Cheks Passed Workflow
+
+This [workflow](/.github/workflows/pr-checks.yaml) checks if all jobs, except those excluded in the workflow configuration, have passed. If the workflow is triggered by a PR where the author is the `kyma-gopher-bot`, the workflow ends immediately with success.
 
 ## Reusable Workflows
 
@@ -84,10 +65,10 @@ by setting the **DB_IN_MEMORY_FOR_E2E_TESTS** environment variable to `true`. Ho
 instance details serialization and deserialization, providing a clearer understanding of the impacts and outcomes of these processes.
 
 The workflow:
-- Checks out code and sets up the cache
-- Sets up the Go environment
-- Invokes `make go-mod-check`
-- Invokes `make test`
+1. Checks out code and sets up the cache
+2. Sets up the Go environment
+3. Invokes `make go-mod-check`
+4. Invokes `make test`
 
 ### KEB Chart  Install Tests
 
@@ -102,10 +83,10 @@ You pass the following parameters from the calling workflow:
 
 
 The workflow:
-- Checks if the KEB chart is rendered successfully by Helm
-- Fetches the **last-k3s-versions** tag versions of k3s releases 
-- Prepares the **last-k3s-versions** k3s clusters with the Docker registries using the list of versions from the previous step
-- Creates required namespaces
-- Installs required dependencies by the KEB chart
-- Installs the KEB chart in the k3s cluster using `helm install`
-- Waits for all tests to finish
+1. Checks if the KEB chart is rendered successfully by Helm
+2. Fetches the **last-k3s-versions** tag versions of k3s releases 
+3. Prepares the **last-k3s-versions** k3s clusters with the Docker registries using the list of versions from the previous step
+4. Creates required namespaces
+5. Installs required dependencies by the KEB chart
+6. Installs the KEB chart in the k3s cluster using `helm install`
+7. Waits for all tests to finish
